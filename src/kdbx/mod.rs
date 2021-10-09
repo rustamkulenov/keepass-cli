@@ -1,3 +1,3 @@
 pub mod consts;
 pub mod utils;
-pub mod kdbxReader;
+pub mod kdbx_reader;

@@ -19,7 +19,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use kdbx::kdbxReader::*;
+use kdbx::kdbx_reader::*;
 
 const FILE_PATH: &str = "example-AES-256-KDF-Q12345.kdbx";
 

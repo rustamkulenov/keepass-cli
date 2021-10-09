@@ -3,5 +3,14 @@
 version = 3
 
 [[package]]
+name = "hmac-sha256"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcdc571e566521512579aab40bf807c5066e1765fb36857f16ed7595c13567c6"
+
+[[package]]
 name = "keepass-cli"
 version = "0.1.0"
+dependencies = [
+ "hmac-sha256",
+]
