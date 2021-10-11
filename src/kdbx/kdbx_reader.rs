@@ -33,8 +33,7 @@ pub struct KdbxReader {
 
 impl KdbxReader {
     // Bytes 0-3: Primary identifier, common across all kdbx versions
-    fn read_base_signature<T: Read>(&mut self, f: &mut T, buf: &mut [u8]) -> io::Result<()> {
-        f.read(&mut buf[0..4])?;
+    fn read_base_signature(&mut self, buf: &[u8]) -> io::Result<()> {
         let prefix: u32 = as_u32_le(&buf);
         println!("Prefix: {:X}", prefix);
 
@@ -47,8 +46,7 @@ impl KdbxReader {
 
     // Bytes 4-7: Secondary identifier. Byte 4 can be used to identify the file version
     // (0x67 is latest, 0x66 is the KeePass 2 pre-release format and 0x55 is KeePass 1)
-    fn read_version_signature<T: Read>(&mut self, f: &mut T, buf: &mut [u8]) -> io::Result<()> {
-        f.read(&mut buf[0..4])?;
+    fn read_version_signature(&mut self, buf: &[u8]) -> io::Result<()> {
         self.version_format = as_u32_le(&buf);
         println!("Version: {:X}", self.version_format);
 
@@ -64,8 +62,7 @@ impl KdbxReader {
 
     // Bytes 8-9: LE WORD, file version (minor)
     // Bytes 10-11: LE WORD, file version (major)
-    fn read_file_version<T: Read>(&mut self, f: &mut T, buf: &mut [u8]) -> io::Result<()> {
-        f.read(&mut buf[0..4])?;
+    fn read_file_version(&mut self, buf: &[u8]) -> io::Result<()> {
         self.version_minor = as_u16_le(&buf[0..2]);
         self.version_major = as_u16_le(&buf[2..4]);
         println!(
@@ -76,9 +73,7 @@ impl KdbxReader {
         Ok(())
     }
 
-    fn check_hmac256hash<T: Read>(&mut self, f: &mut T, data: &mut [u8], key: &[u8]) -> io::Result<()> {
-        let mut expected = [0u8; 64]; // sha256 and hmac_sha256
-        f.read(&mut expected)?;
+    fn check_hmac256hash(&mut self, data: &[u8], expected: &[u8], key: &[u8]) -> io::Result<()> {
         let actual_sha256 = Hash::hash(data);
         let actual_hmac_sha256 = HMAC::mac(data, key);
 
@@ -98,30 +93,21 @@ impl KdbxReader {
     }
 
     // Each field consists of Field_d (1 byte), Data_Size(4 bytes) and data.
-    fn read_header_field<T: Read>(
-        &mut self,
-        f: &mut T,
-        buf: &mut [u8],
-        idx: usize,
-    ) -> io::Result<(u8, u32)> {
-        f.read(&mut buf[idx..idx + 5])?;
+    fn read_header_field(&mut self, buf: &[u8], idx: usize) -> io::Result<(u8, u32)> {
         let field_id = buf[idx];
         let data_len = as_u32_le(&buf[idx + 1..idx + 5]);
 
         println!("Field: {} {}", field_id, data_len);
-
-        f.read(&mut buf[idx + 5..idx + 5 + data_len as usize])?;
-
         println!(
             "Value: {:?}",
-            buf[idx..idx + data_len as usize].to_ascii_lowercase()
+            buf[idx + 5..idx + 5 + data_len as usize].to_ascii_lowercase()
         );
 
         Ok((field_id, data_len))
     }
 
     pub fn new<T: Read>(stream: &mut T) -> io::Result<Self> {
-        let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
+        let mut buf = Vec::with_capacity(10 * 1024);
 
         let mut k = KdbxReader {
             version_format: 0,
@@ -129,19 +115,21 @@ impl KdbxReader {
             version_major: 0,
         };
 
+        stream.read_to_end(&mut buf)?;
+
         let mut idx: usize = 0;
 
-        k.read_base_signature(stream, &mut buf[idx..idx + 4])?;
+        k.read_base_signature(&buf[idx..idx + 4])?;
         idx += 4;
-        k.read_version_signature(stream, &mut buf[idx..idx + 4])?;
+        k.read_version_signature(&buf[idx..idx + 4])?;
         idx += 4;
-        k.read_file_version(stream, &mut buf[idx..idx + 4])?;
+        k.read_file_version(&buf[idx..idx + 4])?;
         idx += 4;
 
         const FIELD_HEADER_SIZE: usize = 5;
 
         loop {
-            match k.read_header_field(stream, &mut buf, idx) {
+            match k.read_header_field(&buf, idx) {
                 Ok((field_id, data_len)) => {
                     idx = idx + FIELD_HEADER_SIZE + data_len as usize;
                     if field_id == HeaderFieldId::EndOfHeader as u8 {
@@ -153,7 +141,7 @@ impl KdbxReader {
         }
 
         let key = "Q12345".as_bytes();
-        k.check_hmac256hash(stream, &mut buf[..idx], &key)?;
+        k.check_hmac256hash(&buf[..idx], &buf[idx..idx+64], &key)?;
 
         Ok(k)
     }

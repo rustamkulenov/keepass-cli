@@ -23,17 +23,17 @@ pub const VER_SIGNATURE_2XPOST: u32 = 0xB54BFB67;
 pub enum HeaderFieldId {
     EndOfHeader = 0,
     Comment = 1,
-    CipherID = 2,
-    CompressionFlags = 3,
-    MasterSeed = 4,
-    TransformSeed = 5,   // For v3.1. Obsolete for v4
-    TransformRounds = 6, // For v3.1. Obsolete for v4
-    EncryptionIV = 7,
+    CipherID = 2,         // 16 bytes
+    CompressionFlags = 3, // 4 bytes
+    MasterSeed = 4,       // 32 bytes
+    TransformSeed = 5,    // For v3.1. Obsolete for v4
+    TransformRounds = 6,  // For v3.1. Obsolete for v4
+    EncryptionIV = 7,     // 16 bytes
     ProtectedStreamKey = 8,
     StreamStartBytes = 9,
     InnerRandomStreamID = 10,
-    KdfParameters = 11,  // Serialized as VariantDictionary. See https://keepass.info/help/kb/kdbx_4.html#extkdf
-    PluginData = 12 // Serialized as VariantDictionary.
+    KdfParameters = 11, // Serialized as VariantDictionary. See https://keepass.info/help/kb/kdbx_4.html#extkdf
+    PluginData = 12,    // Serialized as VariantDictionary.
 }
 
 pub enum ProtectedStreamAlgo {
