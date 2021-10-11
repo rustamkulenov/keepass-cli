@@ -13,19 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+
 mod kdbx;
 
-use std::fs::File;
+use std::fs::{OpenOptions};
 use std::io;
-use std::io::prelude::*;
 
 use kdbx::kdbx_reader::*;
 
 const FILE_PATH: &str = "example-AES-256-KDF-Q12345.kdbx";
 
+
 fn main() -> io::Result<()> {
 
-    let f = File::open(FILE_PATH);
+    let f = OpenOptions::new().read(true).open(FILE_PATH);
 
     let mut file = match f {
         Ok(f) => f,
@@ -35,9 +36,7 @@ fn main() -> io::Result<()> {
         }
     };
 
-    let k = KdbxReader::new(&mut file);
-
-    println!("Hello, world!");
+    let _ = KdbxReader::new(&mut file);
 
     Ok(())
 }

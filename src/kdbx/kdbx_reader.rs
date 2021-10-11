@@ -76,13 +76,23 @@ impl KdbxReader {
         Ok(())
     }
 
-    fn check_hmac256hash<T: Read>(&mut self, f: &mut T, data: &mut [u8]) -> io::Result<()>{
-        let mut expected = [0u8; 32];
+    fn check_hmac256hash<T: Read>(&mut self, f: &mut T, data: &mut [u8], key: &[u8]) -> io::Result<()> {
+        let mut expected = [0u8; 64]; // sha256 and hmac_sha256
         f.read(&mut expected)?;
-        let actual = Hash::hash(data);
+        let actual_sha256 = Hash::hash(data);
+        let actual_hmac_sha256 = HMAC::mac(data, key);
 
-        println!("Expected: {:?}", expected);
-        println!("Actual: {:?}", actual);
+        print!("Hash Diff:          ");
+        for i in 0..32 {
+            print!("{}", if expected[i] != actual_sha256[i] {"X"} else {"∙"});
+        }
+        println!();
+
+        print!("HMAC Diff:          ");
+        for i in 0..32 {
+            print!("{}", if expected[32+i] != actual_hmac_sha256[i] {"X"} else {"∙"});
+        }
+        println!();
 
         Ok(())
     }
@@ -101,8 +111,11 @@ impl KdbxReader {
         println!("Field: {} {}", field_id, data_len);
 
         f.read(&mut buf[idx + 5..idx + 5 + data_len as usize])?;
-        
-        println!("Value: {:?}", buf[idx..idx + data_len as usize].to_ascii_lowercase());
+
+        println!(
+            "Value: {:?}",
+            buf[idx..idx + data_len as usize].to_ascii_lowercase()
+        );
 
         Ok((field_id, data_len))
     }
@@ -118,7 +131,6 @@ impl KdbxReader {
 
         let mut idx: usize = 0;
 
-        //TODO: simplify
         k.read_base_signature(stream, &mut buf[idx..idx + 4])?;
         idx += 4;
         k.read_version_signature(stream, &mut buf[idx..idx + 4])?;
@@ -140,7 +152,8 @@ impl KdbxReader {
             }
         }
 
-        k.check_hmac256hash(stream, &mut buf[..idx])?;
+        let key = "Q12345".as_bytes();
+        k.check_hmac256hash(stream, &mut buf[..idx], &key)?;
 
         Ok(k)
     }
