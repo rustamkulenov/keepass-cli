@@ -35,6 +35,69 @@ pub struct KdbxReader {
 
 impl KdbxReader {
 
+    pub fn new<T: Read>(stream: &mut T) -> io::Result<KdbxReader> {
+        let mut k = KdbxReader {
+            buf: Vec::with_capacity(10 * 1024),
+            version_format: 0,
+            version_minor: 0,
+            version_major: 0,
+            master_seed: Vec::with_capacity(64),
+        };
+
+        stream.read_to_end(&mut k.buf)?;
+        let mut idx: usize = 0;
+
+        k.read_header(&mut idx)?;
+        k.read_fields(&mut idx)?;
+
+        let key = "Q12345".as_bytes();
+        k.check_hmac256hash(idx, &key)?;
+
+        Ok(k)
+    }
+
+    fn read_header(&mut self, idx: &mut usize) -> io::Result<()> {
+        self.read_base_signature(*idx)?;
+        *idx += 4;
+        self.read_version_signature(*idx)?;
+        *idx += 4;
+        self.read_file_version(*idx)?;
+        *idx += 4;
+
+        Ok(())
+    }
+
+    fn read_fields(&mut self, idx: &mut usize) -> io::Result<()> {
+        const FIELD_HEADER_SIZE: usize = 5;
+
+        loop {
+            match self.read_header_field(*idx) {
+                Ok((field_id, data_len)) => {
+                    *idx = *idx + FIELD_HEADER_SIZE;
+
+                    match field_id {
+                        HeaderFieldId::EndOfHeader => {
+                            *idx = *idx + data_len as usize;
+                            break;
+                        },
+                        HeaderFieldId::MasterSeed => {
+                            self.master_seed = vec![0; data_len as usize];
+                            self.master_seed.clone_from_slice(&self.buf[*idx..*idx+data_len as usize]);
+                        }
+
+                        _ => ()
+                    }
+
+                    *idx = *idx + data_len as usize;
+
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(())
+    }
+    
     // Bytes 0-3: Primary identifier, common across all kdbx versions
     fn read_base_signature(&self, idx: usize) -> io::Result<()> {
         let prefix: u32 = as_u32_le(&self.buf[idx..idx+4]);
@@ -113,56 +176,4 @@ impl KdbxReader {
         Ok((field_id.into(), data_len))
     }
 
-    pub fn new<T: Read>(stream: &mut T) -> io::Result<KdbxReader> {
-        let mut k = KdbxReader {
-            buf: Vec::with_capacity(10 * 1024),
-            version_format: 0,
-            version_minor: 0,
-            version_major: 0,
-            master_seed: Vec::with_capacity(64),
-        };
-
-        stream.read_to_end(&mut k.buf)?;
-
-        let mut idx: usize = 0;
-
-        k.read_base_signature(idx)?;
-        idx += 4;
-        k.read_version_signature(idx)?;
-        idx += 4;
-        k.read_file_version(idx)?;
-        idx += 4;
-
-        const FIELD_HEADER_SIZE: usize = 5;
-
-        loop {
-            match k.read_header_field(idx) {
-                Ok((field_id, data_len)) => {
-                    idx = idx + FIELD_HEADER_SIZE;
-
-                    match field_id {
-                        HeaderFieldId::EndOfHeader => {
-                            idx = idx + data_len as usize;
-                            break;
-                        },
-                        HeaderFieldId::MasterSeed => {
-                            k.master_seed = vec![0; data_len as usize];
-                            k.master_seed.clone_from_slice(&k.buf[idx..idx+data_len as usize]);
-                        }
-
-                        _ => ()
-                    }
-
-                    idx = idx + data_len as usize;
-
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        let key = "Q12345".as_bytes();
-        k.check_hmac256hash(idx, &key)?;
-
-        Ok(k)
-    }
 }
