@@ -20,6 +20,7 @@ pub const VER_SIGNATURE_2XPRE: u32 = 0xB54BFB66;
 pub const VER_SIGNATURE_2XPOST: u32 = 0xB54BFB67;
 
 #[repr(u8)]
+#[derive(PartialEq, PartialOrd)]
 pub enum HeaderFieldId {
     EndOfHeader = 0,
     Comment = 1,
@@ -39,4 +40,27 @@ pub enum HeaderFieldId {
 pub enum ProtectedStreamAlgo {
     ArcFourVariant = 1,
     Salsa20 = 2,
+}
+
+impl From<u8> for HeaderFieldId {
+
+    // Required for convertion to/from u8. See also std::convert::Into.
+    fn from(value: u8) -> Self {
+        match value {
+            0 => return HeaderFieldId::EndOfHeader,
+            1 => return HeaderFieldId::Comment,
+            2 => return HeaderFieldId::CipherID,
+            3 => return HeaderFieldId::CompressionFlags,
+            4 => return HeaderFieldId::MasterSeed,
+            5 => return HeaderFieldId::TransformSeed,
+            6 => return HeaderFieldId::TransformRounds,
+            7 => return HeaderFieldId::EncryptionIV,
+            8 => return HeaderFieldId::ProtectedStreamKey,
+            9 => return HeaderFieldId::StreamStartBytes,
+            10 => return HeaderFieldId::InnerRandomStreamID,
+            11 => return HeaderFieldId::KdfParameters,
+            12 => return HeaderFieldId::PluginData,
+            _ => panic!("Unable to convert u8 to HeaderFieldId. Unknown value.")
+        }
+    }
 }

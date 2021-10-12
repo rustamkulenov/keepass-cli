@@ -15,6 +15,7 @@
 */
 
 use std::io;
+use std::convert::Into;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 
@@ -23,18 +24,20 @@ use hmac_sha256::*;
 use super::consts::*;
 use super::utils::*;
 
-const BUF_SIZE: usize = 1024;
-
 pub struct KdbxReader {
+    pub buf: Vec<u8>,
+
     pub version_format: u32,
     pub version_minor: u16,
     pub version_major: u16,
+    pub master_seed: Vec<u8>
 }
 
 impl KdbxReader {
+
     // Bytes 0-3: Primary identifier, common across all kdbx versions
-    fn read_base_signature(&mut self, buf: &[u8]) -> io::Result<()> {
-        let prefix: u32 = as_u32_le(&buf);
+    fn read_base_signature(&self, idx: usize) -> io::Result<()> {
+        let prefix: u32 = as_u32_le(&self.buf[idx..idx+4]);
         println!("Prefix: {:X}", prefix);
 
         if prefix != KDBX_PREFIX {
@@ -46,8 +49,8 @@ impl KdbxReader {
 
     // Bytes 4-7: Secondary identifier. Byte 4 can be used to identify the file version
     // (0x67 is latest, 0x66 is the KeePass 2 pre-release format and 0x55 is KeePass 1)
-    fn read_version_signature(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.version_format = as_u32_le(&buf);
+    fn read_version_signature(&mut self, idx: usize) -> io::Result<()> {
+        self.version_format = as_u32_le(&self.buf[idx..idx+4]);
         println!("Version: {:X}", self.version_format);
 
         match self.version_format {
@@ -62,9 +65,9 @@ impl KdbxReader {
 
     // Bytes 8-9: LE WORD, file version (minor)
     // Bytes 10-11: LE WORD, file version (major)
-    fn read_file_version(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.version_minor = as_u16_le(&buf[0..2]);
-        self.version_major = as_u16_le(&buf[2..4]);
+    fn read_file_version(&mut self, idx: usize) -> io::Result<()> {
+        self.version_minor = as_u16_le(&self.buf[idx..idx+2]);
+        self.version_major = as_u16_le(&self.buf[idx+2..idx+4]);
         println!(
             "File version: {}.{}",
             self.version_minor, self.version_major
@@ -73,19 +76,23 @@ impl KdbxReader {
         Ok(())
     }
 
-    fn check_hmac256hash(&mut self, data: &[u8], expected: &[u8], key: &[u8]) -> io::Result<()> {
+    // 64 bytes. 32 for SHA-256 hash and 32 for HMAC
+    fn check_hmac256hash(&self, idx: usize, key: &[u8]) -> io::Result<()> {
+        let data = &self.buf[..idx];
+        let expected_sha256 = &self.buf[idx..idx+32];
+        let expected_hmac_sha256 = &self.buf[idx+32..idx+64];
         let actual_sha256 = Hash::hash(data);
         let actual_hmac_sha256 = HMAC::mac(data, key);
 
         print!("Hash Diff:          ");
         for i in 0..32 {
-            print!("{}", if expected[i] != actual_sha256[i] {"X"} else {"∙"});
+            print!("{}", if expected_sha256[i] != actual_sha256[i] {"X"} else {"∙"});
         }
         println!();
 
         print!("HMAC Diff:          ");
         for i in 0..32 {
-            print!("{}", if expected[32+i] != actual_hmac_sha256[i] {"X"} else {"∙"});
+            print!("{}", if expected_hmac_sha256[i] != actual_hmac_sha256[i] {"X"} else {"∙"});
         }
         println!();
 
@@ -93,55 +100,68 @@ impl KdbxReader {
     }
 
     // Each field consists of Field_d (1 byte), Data_Size(4 bytes) and data.
-    fn read_header_field(&mut self, buf: &[u8], idx: usize) -> io::Result<(u8, u32)> {
-        let field_id = buf[idx];
-        let data_len = as_u32_le(&buf[idx + 1..idx + 5]);
+    fn read_header_field(&self, idx: usize) -> io::Result<(HeaderFieldId, u32)> {
+        let field_id = self.buf[idx];
+        let data_len = as_u32_le(&self.buf[idx + 1..idx + 5]);
 
         println!("Field: {} {}", field_id, data_len);
         println!(
             "Value: {:?}",
-            buf[idx + 5..idx + 5 + data_len as usize].to_ascii_lowercase()
+            self.buf[idx + 5..idx + 5 + data_len as usize].to_ascii_lowercase()
         );
 
-        Ok((field_id, data_len))
+        Ok((field_id.into(), data_len))
     }
 
-    pub fn new<T: Read>(stream: &mut T) -> io::Result<Self> {
-        let mut buf = Vec::with_capacity(10 * 1024);
-
+    pub fn new<T: Read>(stream: &mut T) -> io::Result<KdbxReader> {
         let mut k = KdbxReader {
+            buf: Vec::with_capacity(10 * 1024),
             version_format: 0,
             version_minor: 0,
             version_major: 0,
+            master_seed: Vec::with_capacity(64),
         };
 
-        stream.read_to_end(&mut buf)?;
+        stream.read_to_end(&mut k.buf)?;
 
         let mut idx: usize = 0;
 
-        k.read_base_signature(&buf[idx..idx + 4])?;
+        k.read_base_signature(idx)?;
         idx += 4;
-        k.read_version_signature(&buf[idx..idx + 4])?;
+        k.read_version_signature(idx)?;
         idx += 4;
-        k.read_file_version(&buf[idx..idx + 4])?;
+        k.read_file_version(idx)?;
         idx += 4;
 
         const FIELD_HEADER_SIZE: usize = 5;
 
         loop {
-            match k.read_header_field(&buf, idx) {
+            match k.read_header_field(idx) {
                 Ok((field_id, data_len)) => {
-                    idx = idx + FIELD_HEADER_SIZE + data_len as usize;
-                    if field_id == HeaderFieldId::EndOfHeader as u8 {
-                        break;
-                    };
+                    idx = idx + FIELD_HEADER_SIZE;
+
+                    match field_id {
+                        HeaderFieldId::EndOfHeader => {
+                            idx = idx + data_len as usize;
+                            break;
+                        },
+                        HeaderFieldId::MasterSeed => {
+                            k.master_seed = vec![0; data_len as usize];
+                            k.master_seed.clone_from_slice(&k.buf[idx..idx+data_len as usize]);
+                        }
+
+                        _ => ()
+                    }
+
+                    idx = idx + data_len as usize;
+
                 }
                 Err(e) => return Err(e),
             }
         }
 
         let key = "Q12345".as_bytes();
-        k.check_hmac256hash(&buf[..idx], &buf[idx..idx+64], &key)?;
+        k.check_hmac256hash(idx, &key)?;
 
         Ok(k)
     }
