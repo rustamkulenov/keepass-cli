@@ -41,12 +41,15 @@ impl KdbxReader {
             version_format: 0,
             version_minor: 0,
             version_major: 0,
-            master_seed: Vec::with_capacity(64),
+            master_seed: Vec::with_capacity(32),
         };
 
         stream.read_to_end(&mut k.buf)?;
         let mut idx: usize = 0;
 
+        // KDBX v4 File format:
+        //  | 12b    | n      [1b      |2b  |size]  | 32b              | 32b                   | 
+        //  | Header | Fields:[field_id|size|data]* | SHA256 of header | HMAC SHA256 of header | Database
         k.read_header(&mut idx)?;
         k.read_fields(&mut idx)?;
 
@@ -97,7 +100,7 @@ impl KdbxReader {
 
         Ok(())
     }
-    
+
     // Bytes 0-3: Primary identifier, common across all kdbx versions
     fn read_base_signature(&self, idx: usize) -> io::Result<()> {
         let prefix: u32 = as_u32_le(&self.buf[idx..idx+4]);
@@ -119,10 +122,7 @@ impl KdbxReader {
         match self.version_format {
             VER_SIGNATURE_1X => Err(io::Error::new(ErrorKind::Other, "v1 is not supported")),
             VER_SIGNATURE_2XPRE | VER_SIGNATURE_2XPOST => Ok(()),
-            _ => Err(io::Error::new(
-                ErrorKind::Other,
-                "Not expected version signature",
-            )),
+            _ => Err(io::Error::new( ErrorKind::Other,"Not expected version signature" )),
         }
     }
 
@@ -130,11 +130,12 @@ impl KdbxReader {
     // Bytes 10-11: LE WORD, file version (major)
     fn read_file_version(&mut self, idx: usize) -> io::Result<()> {
         self.version_minor = as_u16_le(&self.buf[idx..idx+2]);
-        self.version_major = as_u16_le(&self.buf[idx+2..idx+4]);
-        println!(
-            "File version: {}.{}",
-            self.version_minor, self.version_major
-        );
+        self.version_major = as_u16_le(&self.buf[idx+2..idx+4]);        
+        println!("File version: {}.{}", self.version_major, self.version_minor);
+
+        if FILE_FORMAT_4 != (self.version_major as u32) << 16 + (self.version_minor) {
+            return Err(io::Error::new( ErrorKind::Other,"Not expected file version" ));
+        }
 
         Ok(())
     }

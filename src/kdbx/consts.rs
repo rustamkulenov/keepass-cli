@@ -18,6 +18,7 @@ pub const KDBX_PREFIX: u32 = 0x9AA2D903;
 pub const VER_SIGNATURE_1X: u32 = 0xB54BFB65;
 pub const VER_SIGNATURE_2XPRE: u32 = 0xB54BFB66;
 pub const VER_SIGNATURE_2XPOST: u32 = 0xB54BFB67;
+pub const FILE_FORMAT_4: u32 = 0x00040000;
 
 #[repr(u8)]
 #[derive(PartialEq, PartialOrd)]
@@ -32,7 +33,7 @@ pub enum HeaderFieldId {
     EncryptionIV = 7,     // 16 bytes
     ProtectedStreamKey = 8,
     StreamStartBytes = 9,
-    InnerRandomStreamID = 10,
+    InnerRandomStreamID = 10, // 4 bytes
     KdfParameters = 11, // Serialized as VariantDictionary. See https://keepass.info/help/kb/kdbx_4.html#extkdf
     PluginData = 12,    // Serialized as VariantDictionary.
 }
@@ -43,7 +44,6 @@ pub enum ProtectedStreamAlgo {
 }
 
 impl From<u8> for HeaderFieldId {
-
     // Required for convertion to/from u8. See also std::convert::Into.
     fn from(value: u8) -> Self {
         match value {
@@ -60,7 +60,7 @@ impl From<u8> for HeaderFieldId {
             10 => return HeaderFieldId::InnerRandomStreamID,
             11 => return HeaderFieldId::KdfParameters,
             12 => return HeaderFieldId::PluginData,
-            _ => panic!("Unable to convert u8 to HeaderFieldId. Unknown value.")
+            _ => panic!("Unable to convert u8 to HeaderFieldId. Unknown value."),
         }
     }
 }
