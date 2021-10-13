@@ -149,7 +149,7 @@ impl KdbxReader {
         let expected_hmac_sha256 = &self.buf[idx+32..idx+64];
 
         let actual_sha256 = Hash::hash(data);
-        let actual_hmac_sha256 = key.hmac_key(&self.master_seed);
+        let actual_hmac_sha256 = HMAC::mac(data, &key.hmac_key(&self.master_seed));
 
         print!("Hash Diff:          ");
         for i in 0..32 {
