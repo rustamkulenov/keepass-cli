@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 hmac-sha256 = "0.1.7"
+sha2 = "0.9.8"

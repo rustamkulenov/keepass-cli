@@ -23,6 +23,7 @@ use hmac_sha256::*;
 
 use super::consts::*;
 use super::utils::*;
+use super::key::*;
 
 pub struct KdbxReader {
     pub buf: Vec<u8>,
@@ -53,7 +54,7 @@ impl KdbxReader {
         k.read_header(&mut idx)?;
         k.read_fields(&mut idx)?;
 
-        let key = "Q12345".as_bytes();
+        let key = PasswordKey::new("Q12345");
         k.check_hmac256hash(idx, &key)?;
 
         Ok(k)
@@ -141,12 +142,14 @@ impl KdbxReader {
     }
 
     // 64 bytes. 32 for SHA-256 hash and 32 for HMAC
-    fn check_hmac256hash(&self, idx: usize, key: &[u8]) -> io::Result<()> {
+    fn check_hmac256hash(&self, idx: usize, key: &impl Key) -> io::Result<()> {
         let data = &self.buf[..idx];
+        
         let expected_sha256 = &self.buf[idx..idx+32];
         let expected_hmac_sha256 = &self.buf[idx+32..idx+64];
+
         let actual_sha256 = Hash::hash(data);
-        let actual_hmac_sha256 = HMAC::mac(data, key);
+        let actual_hmac_sha256 = key.hmac_key(&self.master_seed);
 
         print!("Hash Diff:          ");
         for i in 0..32 {

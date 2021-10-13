@@ -16,4 +16,5 @@
 
 pub mod consts;
 pub mod utils;
+pub mod key;
 pub mod kdbx_reader;
