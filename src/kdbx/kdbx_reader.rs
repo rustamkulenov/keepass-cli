@@ -55,7 +55,9 @@ impl KdbxReader {
         k.read_fields(&mut idx)?;
 
         let key = PasswordKey::new("Q12345");
-        k.check_hmac256hash(idx, &key)?;
+        let mut composite_key = CompositeKey::new();
+        composite_key.add(key);
+        k.check_hmac256hash(idx, &composite_key)?;
 
         Ok(k)
     }
