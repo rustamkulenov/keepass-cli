@@ -173,9 +173,9 @@ impl KdbxReader {
         let field_id = self.buf[idx];
         let data_len = as_u32_le(&self.buf[idx + 1..idx + 5]);
 
-        println!("Field: {} {}", field_id, data_len);
+        println!("Field: {:?} ({}B)", HeaderFieldId::from(field_id), data_len);
         println!(
-            "Value: {:?}",
+            "Value: {:x?}",
             self.buf[idx + 5..idx + 5 + data_len as usize].to_ascii_lowercase()
         );
 

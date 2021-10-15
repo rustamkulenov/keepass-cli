@@ -8,3 +8,6 @@ edition = "2018"
 [dependencies]
 hmac-sha256 = "0.1.7"
 sha2 = "0.9.8"
+hex-literal = "0.3"
+aes = "0.7"
+block-modes = "0.8"
