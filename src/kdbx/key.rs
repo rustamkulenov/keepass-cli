@@ -6,15 +6,13 @@ use super::crypt::kdf::{AesKdf, Kdf};
 pub trait Key {
     // SHA512 of [UINT64_MAX | hmac_key_keepass2]
     // UINT64_MAX is 16 0xFF
-    fn hmac_key(&self, master_seed: &[u8]) -> [u8; 64] {
-        self.hmac_key_for_index(master_seed, u64::MAX)
-    }
+    fn hmac_key(&self) -> [u8; 64];
 
     // SHA512 of [index | hmac_key_keepass2]
-    fn hmac_key_for_index(&self, master_seed: &[u8], block_index: u64) -> [u8; 64] {
+    fn hmac_key_for_index(&self, master_seed: &[u8], seed: &[u8], block_index: u64, rounds: u64) -> [u8; 64] {
         let hash = Sha512::new()
             .chain(&block_index.to_le_bytes()[..])
-            .chain(&self.hmac_key_keepass2(master_seed))
+            .chain(&self.hmac_key_keepass2(master_seed, seed, rounds))
             .finalize();
         let mut res: [u8; 64] = [0u8; 64];
         res.copy_from_slice(&hash);
@@ -23,10 +21,10 @@ pub trait Key {
     }
 
     // Calculates SHA512 of [master_Seed | composite_key | 0x01] used for Keepass2
-    fn hmac_key_keepass2(&self, master_seed: &[u8]) -> [u8; 64] {
+    fn hmac_key_keepass2(&self, master_seed: &[u8], seed: &[u8], rounds: u64) -> [u8; 64] {
         let hash = Sha512::new()
             .chain(master_seed)
-            .chain(&self.transformed(master_seed))
+            .chain(&self.transformed(seed, rounds))
             .chain(1u8.to_le_bytes())
             .finalize();
         let mut res: [u8; 64] = [0u8; 64];
@@ -35,10 +33,10 @@ pub trait Key {
         res
     }
 
-    fn transformed(&self, master_seed: &[u8]) -> [u8; 32] {
+    fn transformed(&self, seed: &[u8], rounds: u64) -> [u8; 32] {
         let kdf = AesKdf {
-            seed: master_seed,
-            rounds: 1,  // TODO: Provide real value
+            seed,
+            rounds,
         };
 
         kdf.transform_key(self.raw_key().as_slice()).unwrap()
@@ -65,8 +63,11 @@ pub struct PasswordKey {
     passw_hash: [u8; 32],
 }
 
-pub struct CompositeKey<T: Key> {
+pub struct CompositeKey<T: Key> {    
     items: Vec<T>,
+    rounds: u64,
+    master_seed: Vec<u8>,
+    seed: Vec<u8>
 }
 
 impl PasswordKey {
@@ -78,8 +79,13 @@ impl PasswordKey {
 }
 
 impl<T: Key> CompositeKey<T> {
-    pub fn new() -> CompositeKey<T> {
-        CompositeKey { items: vec![] }
+    pub fn new(master_seed: Vec<u8>, seed: Vec<u8>, rounds: u64) -> CompositeKey<T> {
+        CompositeKey { 
+            items: vec![],
+            rounds,
+            seed,
+            master_seed
+        }
     }
 
     pub fn add(&mut self, item: T) {
@@ -92,6 +98,10 @@ impl Key for PasswordKey {
     fn raw_key(&self) -> Vec<u8> {
         self.passw_hash.to_vec()
     }
+
+    fn hmac_key(&self) -> [u8; 64] {
+        panic!("Not expeced call")
+    }
 }
 
 impl<T: Key> Key for CompositeKey<T> {
@@ -100,4 +110,9 @@ impl<T: Key> Key for CompositeKey<T> {
         let all_keys: Vec<u8> = self.items.iter().flat_map(|k| k.raw_key()).collect();
         Hash::hash(&all_keys[..]).to_vec()
     }
+
+    fn hmac_key(&self) -> [u8; 64] {
+        self.hmac_key_for_index( &self.master_seed, &self.seed, u64::MAX, self.rounds)
+    }
+
 }

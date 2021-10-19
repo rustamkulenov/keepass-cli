@@ -30,7 +30,7 @@ const KDF_AES_KDBX4: [u8; 16] = hex!("7c02bb8279a74ac0927d114a00648238");
 const KDF_ARGON2: [u8; 16] = hex!("ef636ddf8c29444b91f7a9a403e30a0c");
 
 #[repr(u8)]
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq, PartialOrd, Eq, Hash)]
 #[derive(Debug)]
 pub enum HeaderFieldId {
     EndOfHeader = 0,
