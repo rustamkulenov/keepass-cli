@@ -1,3 +1,7 @@
+/*
+    Based on 
+    https://github.com/sseemayer/keepass-rs/blob/master/src/result.rs
+*/
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]

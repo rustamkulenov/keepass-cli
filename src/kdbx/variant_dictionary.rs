@@ -1,6 +1,9 @@
+/*
+    Based on:
+    https://github.com/sseemayer/keepass-rs/blob/master/src/variant_dictionary.rs
+ */
 use super::result::{DatabaseIntegrityError, Error, Result};
 use byteorder::{ByteOrder, LittleEndian};
-use hmac_sha256::Hash;
 
 use std::collections::HashMap;
 

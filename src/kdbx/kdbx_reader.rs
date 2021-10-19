@@ -19,12 +19,11 @@ use std::convert::Into;
 use std::io;
 use std::io::prelude::*;
 use std::io::ErrorKind;
-
+use byteorder::{ByteOrder, LittleEndian};
 use hmac_sha256::*;
 
 use super::consts::*;
 use super::key::*;
-use super::utils::*;
 use super::result::Result;
 use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue, FromVariantDictionaryValue};
 
@@ -120,7 +119,7 @@ impl KdbxReader {
 
     // Bytes 0-3: Primary identifier, common across all kdbx versions
     fn read_base_signature(buf: &[u8], idx: usize) -> io::Result<u32> {
-        let prefix: u32 = as_u32_le(&buf[idx..idx + 4]);
+        let prefix: u32 = LittleEndian::read_u32(&buf[idx..idx + 4]);
         println!("Prefix: {:X}", prefix);
 
         if prefix != KDBX_PREFIX {
@@ -133,7 +132,7 @@ impl KdbxReader {
     // Bytes 4-7: Secondary identifier. Byte 4 can be used to identify the file version
     // (0x67 is latest, 0x66 is the KeePass 2 pre-release format and 0x55 is KeePass 1)
     fn read_version_signature(buf: &[u8], idx: usize) -> io::Result<u32> {
-        let version_format = as_u32_le(&buf[idx..idx + 4]);
+        let version_format = LittleEndian::read_u32(&buf[idx..idx + 4]);
         println!("Version: {:X}", version_format);
 
         match version_format {
@@ -149,8 +148,8 @@ impl KdbxReader {
     // Bytes 8-9: LE WORD, file version (minor)
     // Bytes 10-11: LE WORD, file version (major)
     fn read_file_version(buf: &[u8], idx: usize) -> io::Result<(u16, u16)> {
-        let version_minor = as_u16_le(&buf[idx..idx + 2]);
-        let version_major = as_u16_le(&buf[idx + 2..idx + 4]);
+        let version_minor = LittleEndian::read_u16(&buf[idx..idx + 2]);
+        let version_major = LittleEndian::read_u16(&buf[idx + 2..idx + 4]);
         println!("File version: {}.{}", version_major, version_minor);
 
         if FILE_FORMAT_4 != (version_major as u32) << 16 + (version_minor) {
@@ -209,7 +208,7 @@ impl KdbxReader {
     // Each field consists of Field_d (1 byte), Data_Size(4 bytes) and data.
     fn read_header_field(buf: &[u8], idx: usize) -> io::Result<(HeaderFieldId, u32)> {
         let field_id = buf[idx];
-        let data_len = as_u32_le(&buf[idx + 1..idx + 5]);
+        let data_len = LittleEndian::read_u32(&buf[idx + 1..idx + 5]);
 
         println!("Field: {:?} ({}B)", HeaderFieldId::from(field_id), data_len);
         println!(
