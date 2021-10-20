@@ -30,7 +30,6 @@ use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue, FromV
 pub struct KdbxReader {}
 
 pub struct KdbxHeader {
-    //pub kdf: VariantDictionary,
     pub version_format: u32,
     pub version_minor: u16,
     pub version_major: u16,
@@ -44,7 +43,7 @@ impl KdbxReader {
         let mut idx: usize = 0;
 
         // KDBX v4 File format:
-        //  | 12b    | n      [1b      |2b  |size]  | 32b              | 32b                   |
+        //  | 12b    | n      [1b      |4b  |size]  | 32b              | 32b                   |
         //  | Header | Fields:[field_id|size|data]* | SHA256 of header | HMAC SHA256 of header | Database
         let _ = KdbxReader::read_base_signature(&buf, idx)?;
         idx += 4;
