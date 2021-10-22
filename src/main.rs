@@ -16,17 +16,16 @@
 
 mod kdbx;
 
-use std::fs::{OpenOptions};
+use std::fs::OpenOptions;
 use std::io;
 
 use kdbx::kdbx_reader::*;
 
-const FILE_PATH: &str = "example-AES-256-KDF-Q12345.kdbx";
-
+const ZIPPED_FILE: &str = "testfiles/AES-256-KDF-zip-Q12345.kdbx";
+const NONZIPPED_FILE: &str = "testfiles/AES-256-KDF-nonzip-Q12345.kdbx";
 
 fn main() -> io::Result<()> {
-
-    let f = OpenOptions::new().read(true).open(FILE_PATH);
+    let f = OpenOptions::new().read(true).open(ZIPPED_FILE);
 
     let mut file = match f {
         Ok(f) => f,
@@ -36,8 +35,49 @@ fn main() -> io::Result<()> {
         }
     };
 
-    let _ = KdbxReader::new(&mut file);
+    match KdbxReader::read_from(&mut file) {
+        Ok(_) => (),
+        Err(e) => println!("{:?}", e),
+    };
 
     Ok(())
 }
 
+mod test {
+
+    use super::kdbx::kdbx_reader::*;
+    use std::fs::OpenOptions;
+    use std::io;
+
+    /// Tests KDBX4 reader with AES256 encrypted, zipped payload.
+    #[test]
+    fn reader_aes256_zipped() {
+        let f = OpenOptions::new().read(true).open(super::ZIPPED_FILE);
+
+        let mut file = match f {
+            Ok(f) => f,
+            Err(e) => {
+                println!("Failed to open file: {}", e);
+                panic!();
+            }
+        };
+
+        let _ = KdbxReader::read_from(&mut file).unwrap();
+    }
+
+        /// Tests KDBX4 reader with AES256 encrypted, nonzipped payload.
+        #[test]
+        fn reader_aes256_unzipped() {
+            let f = OpenOptions::new().read(true).open(super::NONZIPPED_FILE);
+    
+            let mut file = match f {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("Failed to open file: {}", e);
+                    panic!();
+                }
+            };
+    
+            let _ = KdbxReader::read_from(&mut file).unwrap();
+        }
+}

@@ -14,18 +14,23 @@
    limitations under the License.
 */
 
+use byteorder::{ByteOrder, LittleEndian};
+use flate2::read::GzDecoder;
+use hmac_sha256::*;
 use std::collections::HashMap;
 use std::convert::Into;
 use std::io;
 use std::io::prelude::*;
 use std::io::ErrorKind;
-use byteorder::{ByteOrder, LittleEndian};
-use hmac_sha256::*;
 
 use super::consts::*;
+use super::crypt::ciphers::AES256Cipher;
+use super::crypt::ciphers::Cipher;
+use super::crypt::*;
+use super::decompress::{GZipCompression, NoCompression};
 use super::key::*;
 use super::result::Result;
-use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue, FromVariantDictionaryValue};
+use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue};
 
 pub struct KdbxReader {}
 
@@ -34,51 +39,87 @@ pub struct KdbxHeader {
     pub version_minor: u16,
     pub version_major: u16,
     pub master_seed: Vec<u8>,
+    pub iv: Vec<u8>,
+    pub compressed: bool,
 }
 
 impl KdbxReader {
-    pub fn new<T: Read>(stream: &mut T) -> Result<KdbxHeader> {
-        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    pub fn read_from<T: Read>(stream: &mut T) -> Result<minidom::Element> {
+        let mut buf: Vec<u8> = Vec::with_capacity(10 * 1024);
         stream.read_to_end(&mut buf)?;
         let mut idx: usize = 0;
 
         // KDBX v4 File format:
         //  | 12b    | n      [1b      |4b  |size]  | 32b              | 32b                   |
         //  | Header | Fields:[field_id|size|data]* | SHA256 of header | HMAC SHA256 of header | Database
-        let _ = KdbxReader::read_base_signature(&buf, idx)?;
-        idx += 4;
-        let version_format = KdbxReader::read_version_signature(&buf, idx)?;
-        idx += 4;
-        let (version_major, version_minor) = KdbxReader::read_file_version(&buf, idx)?;
-        idx += 4;
+        let mut header = KdbxHeader {
+            version_format: 0,
+            version_major: 0,
+            version_minor: 0,
+            compressed: false,
+            master_seed: Vec::with_capacity(32),
+            iv: Vec::with_capacity(32),
+        };
 
-        let mut fields: HashMap<HeaderFieldId, VariantDictionaryValue> = HashMap::new();
+        KdbxReader::read_base_signature(&buf, &mut idx)?;
+        KdbxReader::read_version_signature(&buf, &mut idx, &mut header)?;
+        KdbxReader::read_file_version(&buf, &mut idx, &mut header)?;
+
         let mut kdf: VariantDictionary = VariantDictionary::empty();
-        KdbxReader::read_fields(&buf, &mut idx, &mut fields, &mut kdf)?;
+        KdbxReader::read_header_fields(&buf, &mut idx, &mut header, &mut kdf)?;
 
-        let master_seed = &<Vec<u8>>::from_variant_dictionary_value(fields.get(&HeaderFieldId::MasterSeed).unwrap()).unwrap();
         let rounds: u64 = kdf.get("R")?;
         let seed: Vec<u8> = kdf.get("S")?;
 
         let key = PasswordKey::new("Q12345");
-        let mut composite_key = CompositeKey::new(master_seed.to_vec(), seed,  rounds);
+        let mut composite_key = CompositeKey::new(header.master_seed, seed, rounds);
         composite_key.add(key);
+        composite_key.transform();
 
-        KdbxReader::check_hmac256hash(&buf, idx, &composite_key)?;
+        KdbxReader::check_hmac256hash(&buf, &mut idx, &composite_key)?;
 
-        Ok(KdbxHeader {
-            version_format,
-            version_major,
-            version_minor,
-            master_seed: Vec::with_capacity(32),
-        })
+        println!("reading hmac payload...");
+
+        // read encrypted payload from hmac-verified block stream
+        let payload_encrypted = hmac_block_stream::read_hmac_block_stream(
+            &buf[idx..],
+            &composite_key.payload_hmac_key(),
+        )?;
+
+        println!("read: {}B", &payload_encrypted.len());
+
+        let mut cipher = AES256Cipher::new(&composite_key.master_key(), &header.iv)?;
+        let payload_compressed = cipher.decrypt(&payload_encrypted)?;
+
+        let mut payload: Vec<u8> = Vec::new();
+        if header.compressed {
+            let mut zip = GzDecoder::new(&payload_compressed[..]);
+            zip.read_to_end(&mut payload)?;
+        } else {
+            payload = payload_compressed;
+        }
+
+        idx = 0; // indexing from payload beginning
+        println!("Reading inner header");
+        let mut fields = HashMap::new();
+        KdbxReader::read_inner_fields(&payload, &mut idx, &mut fields)?;
+
+        let mut xml_payload = String::from_utf8(payload[idx..].to_vec()).unwrap();
+        xml_payload = xml_payload // Add required namespace and remove spaces
+            .replace("<KeePassFile>", r#"<KeePassFile xmlns="ns">"#)
+            .replace("\n", "")
+            .replace("\t", "");
+
+        println!("{:?}", xml_payload);
+
+        Ok(xml_payload.parse().unwrap())
     }
 
-    fn read_fields(
+    fn read_header_fields(
         buf: &[u8],
         idx: &mut usize,
-        fields: &mut HashMap<HeaderFieldId, VariantDictionaryValue>,
-        kdf: &mut VariantDictionary
+        header: &mut KdbxHeader,
+        kdf: &mut VariantDictionary,
     ) -> io::Result<()> {
         const FIELD_HEADER_SIZE: usize = 5;
 
@@ -86,22 +127,26 @@ impl KdbxReader {
             match KdbxReader::read_header_field(&buf, *idx) {
                 Ok((field_id, data_len)) => {
                     *idx = *idx + FIELD_HEADER_SIZE;
+                    let field_data = &buf[*idx..*idx + data_len as usize];
 
                     match field_id {
                         HeaderFieldId::EndOfHeader => {
                             *idx = *idx + data_len as usize;
                             break;
                         }
-                        HeaderFieldId::MasterSeed => {
-                            let master_seed = buf[*idx..*idx + data_len as usize].to_vec();
-                            fields.insert(
-                                HeaderFieldId::MasterSeed,
-                                VariantDictionaryValue::ByteArray(master_seed),
-                            );
+                        HeaderFieldId::MasterSeed => header.master_seed = field_data.to_vec(),
+                        HeaderFieldId::EncryptionIV => header.iv = field_data.to_vec(),
+                        HeaderFieldId::CompressionFlags => {
+                            let flag: u32 = LittleEndian::read_u32(field_data);
+                            header.compressed = flag == 1;
+                        }
+                        HeaderFieldId::CipherID => {
+                            if CIPHERSUITE_AES256 != field_data {
+                                panic!("Only EAS256 is supported for payload encryption")
+                            }
                         }
                         HeaderFieldId::KdfParameters => {
-                            let buf = &buf[*idx..*idx + data_len as usize];
-                            *kdf = VariantDictionary::parse(buf).unwrap();
+                            *kdf = VariantDictionary::parse(field_data).unwrap();
                         }
 
                         _ => (),
@@ -116,27 +161,65 @@ impl KdbxReader {
         Ok(())
     }
 
+    fn read_inner_fields(
+        buf: &[u8],
+        idx: &mut usize,
+        _fields: &mut HashMap<HeaderFieldId, VariantDictionaryValue>,
+    ) -> io::Result<()> {
+        const FIELD_HEADER_SIZE: usize = 5;
+
+        loop {
+            match KdbxReader::read_header_field(&buf, *idx) {
+                Ok((field_id, data_len)) => {
+                    *idx = *idx + FIELD_HEADER_SIZE;
+                    let _field_data = &buf[*idx..*idx + data_len as usize];
+
+                    match field_id {
+                        HeaderFieldId::EndOfHeader => {
+                            *idx = *idx + data_len as usize;
+                            break;
+                        }
+                        _ => (),
+                    }
+
+                    *idx = *idx + data_len as usize;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
     // Bytes 0-3: Primary identifier, common across all kdbx versions
-    fn read_base_signature(buf: &[u8], idx: usize) -> io::Result<u32> {
-        let prefix: u32 = LittleEndian::read_u32(&buf[idx..idx + 4]);
+    fn read_base_signature(buf: &[u8], idx: &mut usize) -> io::Result<()> {
+        let prefix: u32 = LittleEndian::read_u32(&buf[*idx..*idx + 4]);
+        *idx += 4;
         println!("Prefix: {:X}", prefix);
 
         if prefix != KDBX_PREFIX {
             Err(io::Error::new(ErrorKind::Other, "Unexpected prefix"))
         } else {
-            Ok(prefix)
+            Ok(())
         }
     }
 
     // Bytes 4-7: Secondary identifier. Byte 4 can be used to identify the file version
     // (0x67 is latest, 0x66 is the KeePass 2 pre-release format and 0x55 is KeePass 1)
-    fn read_version_signature(buf: &[u8], idx: usize) -> io::Result<u32> {
-        let version_format = LittleEndian::read_u32(&buf[idx..idx + 4]);
+    fn read_version_signature(
+        buf: &[u8],
+        idx: &mut usize,
+        header: &mut KdbxHeader,
+    ) -> io::Result<()> {
+        let version_format = LittleEndian::read_u32(&buf[*idx..*idx + 4]);
+        *idx += 4;
         println!("Version: {:X}", version_format);
+
+        header.version_format = version_format;
 
         match version_format {
             VER_SIGNATURE_1X => Err(io::Error::new(ErrorKind::Other, "v1 is not supported")),
-            VER_SIGNATURE_2XPRE | VER_SIGNATURE_2XPOST => Ok(version_format),
+            VER_SIGNATURE_2XPRE | VER_SIGNATURE_2XPOST => Ok(()),
             _ => Err(io::Error::new(
                 ErrorKind::Other,
                 "Not expected version signature",
@@ -146,10 +229,15 @@ impl KdbxReader {
 
     // Bytes 8-9: LE WORD, file version (minor)
     // Bytes 10-11: LE WORD, file version (major)
-    fn read_file_version(buf: &[u8], idx: usize) -> io::Result<(u16, u16)> {
-        let version_minor = LittleEndian::read_u16(&buf[idx..idx + 2]);
-        let version_major = LittleEndian::read_u16(&buf[idx + 2..idx + 4]);
+    fn read_file_version(buf: &[u8], idx: &mut usize, header: &mut KdbxHeader) -> io::Result<()> {
+        let version_minor = LittleEndian::read_u16(&buf[*idx..*idx + 2]);
+        let version_major = LittleEndian::read_u16(&buf[*idx + 2..*idx + 4]);
+        *idx += 4;
+
         println!("File version: {}.{}", version_major, version_minor);
+
+        header.version_major = version_major;
+        header.version_minor = version_minor;
 
         if FILE_FORMAT_4 != (version_major as u32) << 16 + (version_minor) {
             return Err(io::Error::new(
@@ -158,22 +246,19 @@ impl KdbxReader {
             ));
         }
 
-        Ok((version_major, version_minor))
+        Ok(())
     }
 
     // 64 bytes. 32 for SHA-256 hash and 32 for HMAC
-    fn check_hmac256hash(
-        buf: &[u8],
-        idx: usize,
-        key: &impl Key
-    ) -> io::Result<()> {
-        let data = &buf[..idx];
+    fn check_hmac256hash(buf: &[u8], idx: &mut usize, key: &impl Key) -> io::Result<()> {
+        let data = &buf[..*idx];
 
-        let expected_sha256 = &buf[idx..idx + 32];
-        let expected_hmac_sha256 = &buf[idx + 32..idx + 64];
+        let expected_sha256 = &buf[*idx..*idx + 32];
+        let expected_hmac_sha256 = &buf[*idx + 32..*idx + 64];
+        *idx += 64;
 
         let actual_sha256 = Hash::hash(data);
-        let actual_hmac_sha256 = HMAC::mac(data, &key.hmac_key());
+        let actual_hmac_sha256 = HMAC::mac(data, &key.header_hmac_key());
 
         print!("Hash Diff:          ");
         for i in 0..32 {

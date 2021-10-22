@@ -3,14 +3,15 @@ Based on:
 https://github.com/sseemayer/keepass-rs/blob/master/src/crypt/kdf.rs
 */
 
+use crate::kdbx::result::{CryptoError, DatabaseIntegrityError, Error, Result};
 use aes::Aes256;
-use cipher::generic_array::{GenericArray};
+use cipher::generic_array::{typenum::U32, GenericArray};
 use cipher::{BlockEncrypt, NewBlockCipher};
 use sha2::{Digest, Sha256};
-use std::io;
 
-pub trait Kdf {
-    fn transform_key(&self, composite_key: &[u8]) -> io::Result<[u8; 32]>;
+pub(crate) trait Kdf {
+    fn transform_key(&self, composite_key: &GenericArray<u8, U32>)
+        -> Result<GenericArray<u8, U32>>;
 }
 
 pub struct AesKdf<'a> {
@@ -19,7 +20,10 @@ pub struct AesKdf<'a> {
 }
 
 impl Kdf for AesKdf<'_> {
-    fn transform_key(&self, composite_key: &[u8]) -> io::Result<[u8; 32]> {
+    fn transform_key(
+        &self,
+        composite_key: &GenericArray<u8, U32>,
+    ) -> Result<GenericArray<u8, U32>> {
         let cipher = Aes256::new(&GenericArray::clone_from_slice(&self.seed));
         let mut block1 = GenericArray::clone_from_slice(&composite_key[..16]);
         let mut block2 = GenericArray::clone_from_slice(&composite_key[16..]);
@@ -33,11 +37,6 @@ impl Kdf for AesKdf<'_> {
         digest.update(block1);
         digest.update(block2);
 
-        let hash = digest.finalize();
-
-        let mut res: [u8; 32] = [0u8; 32];
-        res.copy_from_slice(&hash);
-
-        Ok(res)
+        Ok(digest.finalize())
     }
 }

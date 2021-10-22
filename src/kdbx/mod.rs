@@ -19,5 +19,6 @@ pub mod key;
 pub mod kdbx_reader;
 pub mod result;
 pub mod variant_dictionary;
+pub mod decompress;
 
 pub mod crypt;

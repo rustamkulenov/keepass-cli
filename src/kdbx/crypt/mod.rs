@@ -15,3 +15,5 @@
 */
 
 pub mod kdf;
+pub mod hmac_block_stream;
+pub mod ciphers;
