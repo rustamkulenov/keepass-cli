@@ -22,19 +22,6 @@ use sha2::{Digest, Sha256, Sha512};
 
 use super::crypt::kdf::{AesKdf, Kdf};
 
-/*
-fn final_key(&self, master_seed: &[u8]) -> [u8; 32] {
-    let hash = Sha256::new()
-        .chain(master_seed)
-        .chain(&self.raw_key())
-        .finalize();
-    let mut res: [u8; 32] = [0u8; 32];
-    res.copy_from_slice(&hash);
-
-    res
-}
- */
-
 pub trait Key {
     // A HMAC Key for a header
     fn header_hmac_key(&self) -> GenericArray<u8, U64>;

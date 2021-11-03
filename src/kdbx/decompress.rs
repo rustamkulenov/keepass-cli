@@ -2,7 +2,7 @@ use super::result::Result;
 use flate2::read::GzDecoder;
 use std::io::Read;
 
-pub trait Decompress {
+pub(crate) trait Decompress {
     fn decompress(&self, in_buffer: &[u8]) -> Result<Vec<u8>>;
 }
 

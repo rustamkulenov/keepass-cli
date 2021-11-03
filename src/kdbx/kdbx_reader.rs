@@ -23,6 +23,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 
+use super::kdbx_header::KdbxHeader;
 use super::consts::*;
 use super::crypt::ciphers::AES256Cipher;
 use super::crypt::ciphers::Cipher;
@@ -32,20 +33,11 @@ use super::key::*;
 use super::result::Result;
 use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue};
 
-pub struct KdbxReader {}
-
-pub struct KdbxHeader {
-    pub version_format: u32,
-    pub version_minor: u16,
-    pub version_major: u16,
-    pub master_seed: Vec<u8>,
-    pub iv: Vec<u8>,
-    pub compressed: bool,
-}
+pub(crate) struct KdbxReader {}
 
 impl KdbxReader {
-    pub fn read_from<T: Read>(stream: &mut T) -> Result<minidom::Element> {
-        let mut buf: Vec<u8> = Vec::with_capacity(10 * 1024);
+    pub fn read_from<T: Read>(stream: &mut T, password: &str) -> Result<minidom::Element> {
+        let mut buf: Vec<u8> = Vec::with_capacity(1024 * 1024);
         stream.read_to_end(&mut buf)?;
         let mut idx: usize = 0;
 
@@ -71,7 +63,7 @@ impl KdbxReader {
         let rounds: u64 = kdf.get("R")?;
         let seed: Vec<u8> = kdf.get("S")?;
 
-        let key = PasswordKey::new("Q12345");
+        let key = PasswordKey::new(password);
         let mut composite_key = CompositeKey::new(header.master_seed, seed, rounds);
         composite_key.add(key);
         composite_key.transform();

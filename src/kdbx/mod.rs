@@ -16,9 +16,10 @@
 
 pub mod consts;
 pub mod key;
+pub mod kdbx_header;
 pub mod kdbx_reader;
+pub mod kdbx_writer;
 pub mod result;
 pub mod variant_dictionary;
 pub mod decompress;
-
 pub mod crypt;
