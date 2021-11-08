@@ -60,8 +60,8 @@ impl KdbxReader {
         let mut kdf: VariantDictionary = VariantDictionary::empty();
         KdbxReader::read_header_fields(&buf, &mut idx, &mut header, &mut kdf)?;
 
-        let rounds: u64 = kdf.get("R")?;
-        let seed: Vec<u8> = kdf.get("S")?;
+        let rounds: u64 = kdf.get(KDF_ROUNDS_KEY)?;
+        let seed: Vec<u8> = kdf.get(KDF_SEED_KEY)?;
 
         let key = PasswordKey::new(password);
         let mut composite_key = CompositeKey::new(header.master_seed, seed, rounds);

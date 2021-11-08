@@ -29,6 +29,9 @@ pub const CIPHERSUITE_CHACHA20: [u8; 16] = hex!("d6038a2b8b6f4cb5a524339a31dbb59
 const KDF_AES_KDBX4: [u8; 16] = hex!("7c02bb8279a74ac0927d114a00648238");
 const KDF_ARGON2: [u8; 16] = hex!("ef636ddf8c29444b91f7a9a403e30a0c");
 
+pub const KDF_SEED_KEY: &str = "S";
+pub const KDF_ROUNDS_KEY: &str = "R";
+
 #[repr(u8)]
 #[derive(PartialEq, PartialOrd, Eq, Hash)]
 #[derive(Debug)]

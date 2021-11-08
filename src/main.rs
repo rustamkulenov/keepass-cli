@@ -22,7 +22,9 @@ use std::io;
 use kdbx::kdbx_reader::*;
 
 fn main() -> io::Result<()> {
-    let f = OpenOptions::new().read(true).open("testfiles/AES-256-KDF-nonzip-Q12345.kdbx");
+    let f = OpenOptions::new()
+        .read(true)
+        .open("testfiles/AES-256-KDF-nonzip-Q12345.kdbx");
 
     let mut file = match f {
         Ok(f) => f,
@@ -41,6 +43,12 @@ fn main() -> io::Result<()> {
 }
 
 mod test {
+
+    use minidom::ElementBuilder;
+
+    use crate::kdbx::crypt::ciphers::AES256Cipher;
+    use crate::kdbx::decompress::NoCompression;
+    use crate::kdbx::kdbx_writer::KdbxWriter;
 
     use super::kdbx::kdbx_reader::*;
     use std::fs::OpenOptions;
@@ -66,19 +74,33 @@ mod test {
         let _ = KdbxReader::read_from(&mut file, PASSWORD).unwrap();
     }
 
-        /// Tests KDBX4 reader with AES256 encrypted, nonzipped payload.
-        #[test]
-        fn reader_aes256_unzipped() {
-            let f = OpenOptions::new().read(true).open(NONZIPPED_FILE);
-    
-            let mut file = match f {
-                Ok(f) => f,
-                Err(e) => {
-                    println!("Failed to open file: {}", e);
-                    panic!();
-                }
-            };
-    
-            let _ = KdbxReader::read_from(&mut file, PASSWORD).unwrap();
-        }
+    /// Tests KDBX4 reader with AES256 encrypted, nonzipped payload.
+    #[test]
+    fn reader_aes256_unzipped() {
+        let f = OpenOptions::new().read(true).open(NONZIPPED_FILE);
+
+        let mut file = match f {
+            Ok(f) => f,
+            Err(e) => {
+                println!("Failed to open file: {}", e);
+                panic!();
+            }
+        };
+
+        let _ = KdbxReader::read_from(&mut file, PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn writer_and_reader_test() {
+        let mut stream = <Vec<u8>>::with_capacity(1024*1024*10);
+        let payload = minidom::Element::builder("name", "namespace")
+            .attr("name", "value")
+            .append("inner")
+            .build();
+        let cipher = AES256Cipher::new(&[0u8; 32], &[0u8; 32]).unwrap();
+        let compression = NoCompression {};
+        KdbxWriter::write(&mut stream, PASSWORD, payload, &cipher, &compression).unwrap();
+
+        KdbxReader::read_from(&mut stream.as_slice(), PASSWORD).unwrap();
+    }
 }
