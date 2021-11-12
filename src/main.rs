@@ -18,13 +18,25 @@ mod kdbx;
 
 use std::fs::OpenOptions;
 use std::io;
+use structopt::StructOpt;
 
 use kdbx::kdbx_reader::*;
 
+// Command line args.
+// #cargo run -- -f=<kdbx_file> -p=<secure_password>
+#[derive(StructOpt)]
+struct Cli {
+    #[structopt(short = "f", long = "file", parse(from_os_str))]
+    file: std::path::PathBuf,
+
+    #[structopt(short = "p", long = "password")]
+    password: String,
+}
+
 fn main() -> io::Result<()> {
-    let f = OpenOptions::new()
-        .read(true)
-        .open("testfiles/AES-256-KDF-nonzip-Q12345.kdbx");
+    let args = Cli::from_args();
+
+    let f = OpenOptions::new().read(true).open(args.file);
 
     let mut file = match f {
         Ok(f) => f,
@@ -34,7 +46,7 @@ fn main() -> io::Result<()> {
         }
     };
 
-    match KdbxReader::read_from(&mut file, "Q12345") {
+    match KdbxReader::read_from(&mut file, &args.password) {
         Ok(_) => (),
         Err(e) => println!("{:?}", e),
     };
@@ -92,7 +104,7 @@ mod test {
 
     #[test]
     fn writer_and_reader_test() {
-        let mut stream = <Vec<u8>>::with_capacity(1024*1024*10);
+        let mut stream = <Vec<u8>>::with_capacity(1024 * 1024 * 10);
         let payload = minidom::Element::builder("name", "namespace")
             .attr("name", "value")
             .append("inner")

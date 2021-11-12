@@ -23,12 +23,12 @@ use std::io;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 
-use super::kdbx_header::KdbxHeader;
 use super::consts::*;
 use super::crypt::ciphers::AES256Cipher;
 use super::crypt::ciphers::Cipher;
 use super::crypt::*;
 use super::decompress::{GZipCompression, NoCompression};
+use super::kdbx_header::KdbxHeader;
 use super::key::*;
 use super::result::Result;
 use super::variant_dictionary::{VariantDictionary, VariantDictionaryValue};
@@ -96,6 +96,8 @@ impl KdbxReader {
         let mut fields = HashMap::new();
         KdbxReader::read_inner_fields(&payload, &mut idx, &mut fields)?;
 
+        const NS: &str = "ns";
+
         let mut xml_payload = String::from_utf8(payload[idx..].to_vec()).unwrap();
         xml_payload = xml_payload // Add required namespace and remove spaces
             .replace("<KeePassFile>", r#"<KeePassFile xmlns="ns">"#)
@@ -104,7 +106,27 @@ impl KdbxReader {
 
         println!("{:?}", xml_payload);
 
-        Ok(xml_payload.parse().unwrap())
+        let xml_doc: minidom::Element = xml_payload.parse().unwrap();
+
+        let root = xml_doc.get_child("Root", NS).unwrap();
+
+        root.children().for_each(|group| {
+            if group.name() == "Group" {
+                group.children().for_each(|entry| {
+                    if entry.name() == "Entry" {
+                        entry.children().for_each(|kv| 
+                        if kv.name() == "String" {
+                            let key = kv.get_child("Key", NS).unwrap().text();
+                            let value = kv.get_child("Value", NS).unwrap().text();
+
+                            println!("{0}={1}", key, value);
+                        });
+                    }
+                })
+            }
+        });
+
+        Ok(xml_doc)
     }
 
     fn read_header_fields(
@@ -134,7 +156,7 @@ impl KdbxReader {
                         }
                         HeaderFieldId::CipherID => {
                             if CIPHERSUITE_AES256 != field_data {
-                                panic!("Only EAS256 is supported for payload encryption")
+                                panic!("Only AES256 is supported for payload encryption")
                             }
                         }
                         HeaderFieldId::KdfParameters => {
