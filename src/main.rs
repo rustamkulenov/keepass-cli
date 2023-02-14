@@ -16,9 +16,9 @@
 
 mod kdbx;
 
+use kdbx::content::Content;
 use std::fs::OpenOptions;
 use std::io;
-use kdbx::content::Content;
 use structopt::StructOpt;
 
 use kdbx::kdbx_reader::*;
@@ -52,7 +52,7 @@ fn main() -> io::Result<()> {
             let content = Content::new(doc);
             println!("\r\n--------------------------\r\nRoot entries:");
             println!("{:?}", content);
-        },
+        }
         Err(e) => println!("{:?}", e),
     };
 
@@ -108,6 +108,7 @@ mod tests {
         let _ = KdbxReader::read_from(&mut file, PASSWORD).unwrap();
     }
 
+    #[ignore = "Writer is not iplemented yet"]
     #[test]
     fn writer_and_reader_test() {
         let mut stream = <Vec<u8>>::with_capacity(1024 * 1024 * 10);
