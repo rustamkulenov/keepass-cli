@@ -53,22 +53,7 @@ impl KdbxReader {
             iv: Vec::with_capacity(32),
         };
 
-        KdbxReader::read_base_signature(&buf, &mut idx)?;
-        KdbxReader::read_version_signature(&buf, &mut idx, &mut header)?;
-        KdbxReader::read_file_version(&buf, &mut idx, &mut header)?;
-
-        let mut kdf: VariantDictionary = VariantDictionary::empty();
-        KdbxReader::read_header_fields(&buf, &mut idx, &mut header, &mut kdf)?;
-
-        let rounds: u64 = kdf.get(KDF_ROUNDS_KEY)?;
-        let seed: Vec<u8> = kdf.get(KDF_SEED_KEY)?;
-
-        let key = PasswordKey::new(password);
-        let mut composite_key = CompositeKey::new(header.master_seed, seed, rounds);
-        composite_key.add(key);
-        composite_key.transform();
-
-        KdbxReader::check_hmac256hash(&buf, &mut idx, &composite_key)?;
+        let composite_key = Self::read_and_check_header(&buf, &mut idx, &mut header, password)?;
 
         println!("reading hmac payload...");
 
@@ -129,7 +114,7 @@ impl KdbxReader {
         Ok(xml_doc)
     }
 
-    fn read_header_fields(
+    pub fn read_header_fields(
         buf: &[u8],
         idx: &mut usize,
         header: &mut KdbxHeader,
@@ -175,7 +160,7 @@ impl KdbxReader {
         Ok(())
     }
 
-    fn read_inner_fields(
+    pub fn read_inner_fields(
         buf: &[u8],
         idx: &mut usize,
         _fields: &mut HashMap<HeaderFieldId, VariantDictionaryValue>,
@@ -206,7 +191,7 @@ impl KdbxReader {
     }
 
     // Bytes 0-3: Primary identifier, common across all kdbx versions
-    fn read_base_signature(buf: &[u8], idx: &mut usize) -> io::Result<()> {
+    pub fn read_base_signature(buf: &[u8], idx: &mut usize) -> io::Result<()> {
         let prefix: u32 = LittleEndian::read_u32(&buf[*idx..*idx + 4]);
         *idx += 4;
         println!("Prefix: {:X}", prefix);
@@ -220,7 +205,7 @@ impl KdbxReader {
 
     // Bytes 4-7: Secondary identifier. Byte 4 can be used to identify the file version
     // (0x67 is latest, 0x66 is the KeePass 2 pre-release format and 0x55 is KeePass 1)
-    fn read_version_signature(
+    pub fn read_version_signature(
         buf: &[u8],
         idx: &mut usize,
         header: &mut KdbxHeader,
@@ -243,7 +228,7 @@ impl KdbxReader {
 
     // Bytes 8-9: LE WORD, file version (minor)
     // Bytes 10-11: LE WORD, file version (major)
-    fn read_file_version(buf: &[u8], idx: &mut usize, header: &mut KdbxHeader) -> io::Result<()> {
+    pub fn read_file_version(buf: &[u8], idx: &mut usize, header: &mut KdbxHeader) -> io::Result<()> {
         let version_minor = LittleEndian::read_u16(&buf[*idx..*idx + 2]);
         let version_major = LittleEndian::read_u16(&buf[*idx + 2..*idx + 4]);
         *idx += 4;
@@ -264,7 +249,7 @@ impl KdbxReader {
     }
 
     // 64 bytes. 32 for SHA-256 hash and 32 for HMAC
-    fn check_hmac256hash(buf: &[u8], idx: &mut usize, key: &impl Key) -> io::Result<()> {
+    pub fn check_hmac256hash(buf: &[u8], idx: &mut usize, key: &impl Key) -> io::Result<()> {
         let data = &buf[..*idx];
 
         let expected_sha256 = &buf[*idx..*idx + 32];
@@ -304,7 +289,7 @@ impl KdbxReader {
     }
 
     // Each field consists of Field_d (1 byte), Data_Size(4 bytes) and data.
-    fn read_header_field(buf: &[u8], idx: usize) -> io::Result<(HeaderFieldId, u32)> {
+    pub fn read_header_field(buf: &[u8], idx: usize) -> io::Result<(HeaderFieldId, u32)> {
         let field_id = buf[idx];
         let data_len = LittleEndian::read_u32(&buf[idx + 1..idx + 5]);
 
@@ -316,4 +301,22 @@ impl KdbxReader {
 
         Ok((field_id.into(), data_len))
     }
+
+    pub fn read_and_check_header(buf: &Vec<u8>, idx: &mut usize, header: &mut KdbxHeader, password: &str) -> io::Result<CompositeKey<PasswordKey>> {
+        KdbxReader::read_base_signature(buf, idx)?;
+        KdbxReader::read_version_signature(buf, idx, header)?;
+        KdbxReader::read_file_version(buf, idx, header)?;
+        let mut kdf: VariantDictionary = VariantDictionary::empty();
+        KdbxReader::read_header_fields(buf, idx, header, &mut kdf)?;
+        let rounds: u64 = kdf.get(KDF_ROUNDS_KEY).unwrap();
+        let seed: Vec<u8> = kdf.get(KDF_SEED_KEY).unwrap();
+        let key = PasswordKey::new(password);
+        let master_seed = header.master_seed.clone();
+        let mut composite_key = CompositeKey::new(master_seed, seed, rounds);
+        composite_key.add(key);
+        composite_key.transform();
+        KdbxReader::check_hmac256hash(buf, idx, &composite_key)?;
+        Ok(composite_key)
+    }
+    
 }

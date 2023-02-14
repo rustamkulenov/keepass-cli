@@ -54,7 +54,8 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-mod test {
+#[cfg(test)]
+mod tests {
 
     use minidom::ElementBuilder;
 

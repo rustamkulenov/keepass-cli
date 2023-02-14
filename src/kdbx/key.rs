@@ -37,16 +37,18 @@ pub trait KeyItem {
     fn raw_key(&self) -> Vec<u8>;
 }
 
+#[derive(Debug)]
 pub struct PasswordKey {
     // SHA256 of a password
     passw_hash: [u8; 32],
 }
 
+#[derive(Debug)]
 pub struct CompositeKey<T: KeyItem> {
     items: Vec<T>,
     transformed: GenericArray<u8, U32>,
     is_transformed: bool,
-    rounds: u64,
+    pub rounds: u64,
     master_seed: Vec<u8>,
     seed: Vec<u8>,
 }
