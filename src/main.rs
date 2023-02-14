@@ -18,6 +18,7 @@ mod kdbx;
 
 use std::fs::OpenOptions;
 use std::io;
+use kdbx::content::Content;
 use structopt::StructOpt;
 
 use kdbx::kdbx_reader::*;
@@ -47,7 +48,11 @@ fn main() -> io::Result<()> {
     };
 
     match KdbxReader::read_from(&mut file, &args.password) {
-        Ok(_) => (),
+        Ok(doc) => {
+            let content = Content::new(doc);
+            println!("\r\n--------------------------\r\nRoot entries:");
+            println!("{:?}", content);
+        },
         Err(e) => println!("{:?}", e),
     };
 

@@ -93,24 +93,6 @@ impl KdbxReader {
 
         let xml_doc: minidom::Element = xml_payload.parse().unwrap();
 
-        let root = xml_doc.get_child("Root", NS).unwrap();
-
-        root.children().for_each(|group| {
-            if group.name() == "Group" {
-                group.children().for_each(|entry| {
-                    if entry.name() == "Entry" {
-                        entry.children().for_each(|kv| 
-                        if kv.name() == "String" {
-                            let key = kv.get_child("Key", NS).unwrap().text();
-                            let value = kv.get_child("Value", NS).unwrap().text();
-
-                            println!("{0}={1}", key, value);
-                        });
-                    }
-                })
-            }
-        });
-
         Ok(xml_doc)
     }
 

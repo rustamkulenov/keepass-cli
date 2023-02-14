@@ -23,3 +23,4 @@ pub mod result;
 pub mod variant_dictionary;
 pub mod decompress;
 pub mod crypt;
+pub mod content;

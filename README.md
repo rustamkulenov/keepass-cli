@@ -2,19 +2,27 @@
 
 The idea of this repo/application is to provide CLI tool with minimal dependencies for reading and writing Keepass2 KDBX files with passwords.
 
-### Usecases
-* Read passwords from KDBX files in shell scripts for automation;
-* Provisioning of new services/inventories (e.g. with Ansible or Terraform) and storing new passwords in a kdbx file;
+### Use cases
+Where it can be used:
+* Read passwords from Keepass's KDBX files in shell scripts for automation;
+* Provisioning of new services/inventories (e.g. with Ansible or Terraform), generating access passwords and storing new passwords in a kdbx file;
 
 ## Current Version Limitations 
 
-Work is in progress.
+**Work is in progress!**
 
-Current implementation can only parse kdbx files (version 4) created with Keepass2. It checks SHA256 and HMAC signatures.
+1. Current implementation can only parse kdbx files (version 4) created with Keepass2. It checks SHA256 and HMAC signatures.
+2. Only AES256 is supported as KDF (Key Derivation Function).
+3. [Argon2](https://www.cryptolux.org/index.php/Argon2) is not supported;
 
-Only AES256 is supported as KDF (Key Derivation Function).
+### TODO ###
 
-[Argon2](https://www.cryptolux.org/index.php/Argon2) is not supported yet.
+1. Decode encrypted passwords in content;
+2. Implement KdbxWriter. Now it can write only a header;
+3. Only 1 root group is supported - no hierarchy;
+4. It only parses KDBX and prints headers, content as XML to stdout;
+5. Implement generating of passwords. 
+
 
 ## Build and Run
 
